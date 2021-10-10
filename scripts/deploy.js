@@ -1,58 +1,36 @@
-// This is a script for deploying your contracts. You can adapt it to deploy
-// yours, or create new ones.
-async function main() {
-  // This is just a convenience check
-  if (network.name === "hardhat") {
-    console.warn(
-      "You are trying to deploy a contract to the Hardhat Network, which" +
-        "gets automatically created and destroyed every time. Use the Hardhat" +
-        " option '--network localhost'"
-    );
-  }
+const { web3tx } = require("@decentral.ee/web3-helpers");
+const { setWeb3Provider } = require("@decentral.ee/web3-helpers/src/config");
+const SuperfluidSDK = require("@superfluid-finance/js-sdk");
+const DividendRightsToken = artifacts.require("DividendRightsToken");
 
-  // ethers is avaialble in the global scope
-  const [deployer] = await ethers.getSigners();
-  console.log(
-    "Deploying the contracts with the account:",
-    await deployer.getAddress()
-  );
+module.exports = async function(callback) {
+    try {
+        const version = process.env.RELEASE_VERSION || "test";
+        console.log("release version:", version);
 
-  console.log("Account balance:", (await deployer.getBalance()).toString());
+        // make sure that we are using the same web3 provider in the helpers
+        setWeb3Provider(web3.currentProvider);
 
-  const Token = await ethers.getContractFactory("Token");
-  const token = await Token.deploy();
-  await token.deployed();
+        const sf = new SuperfluidSDK.Framework({
+            web3,
+            version: version,
+            tokens: ["fDAI"]
+        });
+        await sf.initialize();
 
-  console.log("Token address:", token.address);
-
-  // We also save the contract's artifacts and address in the frontend directory
-  saveFrontendFiles(token);
-}
-
-function saveFrontendFiles(token) {
-  const fs = require("fs");
-  const contractsDir = __dirname + "/../frontend/src/contracts";
-
-  if (!fs.existsSync(contractsDir)) {
-    fs.mkdirSync(contractsDir);
-  }
-
-  fs.writeFileSync(
-    contractsDir + "/contract-address.json",
-    JSON.stringify({ Token: token.address }, undefined, 2)
-  );
-
-  const TokenArtifact = artifacts.readArtifactSync("Token");
-
-  fs.writeFileSync(
-    contractsDir + "/Token.json",
-    JSON.stringify(TokenArtifact, null, 2)
-  );
-}
-
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+        const app = await web3tx(
+            DividendRightsToken.new,
+            "Deploy DividendRightsToken"
+        )(
+            "Dividend Rights Token",
+            "DRT",
+            sf.tokens.fDAIx.address,
+            sf.host.address,
+            sf.agreements.ida.address
+        );
+        console.log("App deployed at", app.address);
+        callback();
+    } catch (err) {
+        callback(err);
+    }
+};
